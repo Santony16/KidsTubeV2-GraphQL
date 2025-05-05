@@ -50,6 +50,16 @@ const typeDefs = gql`
     flag: String
   }
 
+  # YouTube search result type
+  type YouTubeSearchResult {
+    id: String!
+    title: String!
+    description: String
+    thumbnailUrl: String
+    channelTitle: String
+    publishedAt: String
+  }
+
   type Query {
     # Video queries (protected, require authentication)
     videos(userId: ID, search: String): [Video]
@@ -69,35 +79,9 @@ const typeDefs = gql`
     
     # Utility queries (some can be public)
     countries: [Country]
-  }
-  
-  type Mutation {
-    # Auth mutations
-    login(email: String!, password: String!): AuthPayload!
-    verifySmsCode(userId: ID!, code: String!): AuthPayload!
-    googleAuth(token: String!): AuthPayload!
-    completeGoogleProfile(
-      userId: ID!,
-      googleToken: String!,
-      phone: String!,
-      pin: String!,
-      birthDate: String!,
-      country: String!
-    ): AuthPayload!
     
-    # User mutations
-    registerUser(
-      email: String!,
-      password: String!,
-      confirmPassword: String!,
-      firstName: String!,
-      lastName: String!,
-      phone: String!,
-      pin: String!,
-      country: String!,
-      countryDialCode: String!,
-      birthDate: String!
-    ): AuthPayload!
+    # YouTube search query
+    youtubeSearch(query: String!): [YouTubeSearchResult]
   }
 `;
 

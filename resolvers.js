@@ -14,8 +14,10 @@ const resolvers = {
   Query: {
     // Video queries
     videos: async (_, { userId, search }, context) => {
-      // Verify the user is authenticated
-      checkAuth(context);
+      // Only verify authentication if userId is provided
+      if (userId) {
+        checkAuth(context);
+      }
       
       try {
         let query = {};
@@ -35,6 +37,7 @@ const resolvers = {
         
         console.log('Executing Video.find() with query:', query);
         const videos = await Video.find(query).lean();
+        console.log(`Found ${videos.length} videos`);
         
         return videos.map(video => ({
           id: video._id.toString(),
@@ -229,28 +232,68 @@ const resolvers = {
         
         console.log(`Searching YouTube for: "${query}"`);
         
-        // Call YouTube API
-        const response = await fetch(
-          `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=9&q=${encodeURIComponent(query)}&type=video&key=${YOUTUBE_API_KEY}`
-        );
+        // Ensure environment variable is loaded correctly
+        const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
         
+        // Validate API key existence
+        if (!YOUTUBE_API_KEY) {
+          console.error('CRITICAL ERROR: YouTube API key not found in environment variables');
+          throw new Error('YouTube API configuration error');
+        }
+        
+        console.log(`API Key verification: ${YOUTUBE_API_KEY ? 'Present' : 'Missing'}`);
+        
+        // Properly encode query parameters to prevent URL formatting issues
+        const encodedQuery = encodeURIComponent(query.trim());
+        
+        // Build API URL with all required parameters
+        const apiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=9&q=${encodedQuery}&type=video&key=${YOUTUBE_API_KEY}`;
+        
+        console.log(`Requesting YouTube API at: ${apiUrl.replace(YOUTUBE_API_KEY, 'KEY_HIDDEN')}`);
+        
+        // Make request with proper error handling
+        const response = await fetch(apiUrl);
+        
+        // If error, try to get detailed error message
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('YouTube API error response:', errorText);
-          throw new Error(`YouTube API error: ${response.status}`);
+          let parsedError;
+          
+          try {
+            parsedError = JSON.parse(errorText);
+            console.error('YouTube API detailed error:', parsedError);
+            
+            // Check for common error codes
+            if (parsedError.error && parsedError.error.code === 403) {
+              throw new Error('YouTube API key unauthorized or quota exceeded');
+            } else if (parsedError.error && parsedError.error.code === 400) {
+              throw new Error(`YouTube API request error: ${parsedError.error.message || 'Invalid request parameters'}`);
+            }
+            
+            throw new Error(`YouTube API error (${response.status}): ${parsedError.error?.message || 'Unknown error'}`);
+          } catch (jsonError) {
+            console.error('Non-JSON YouTube API error response:', errorText);
+            throw new Error(`YouTube API error: ${response.status}`);
+          }
         }
         
         const data = await response.json();
         console.log(`YouTube search returned ${data.items?.length || 0} results`);
         
+        // Validate response structure before transforming
+        if (!data.items || !Array.isArray(data.items)) {
+          console.error('Unexpected YouTube API response format:', data);
+          throw new Error('Invalid YouTube API response format');
+        }
+        
         // Transform YouTube API response to match our GraphQL schema
         return data.items.map(item => ({
-          id: item.id.videoId,
-          title: item.snippet.title,
-          description: item.snippet.description,
-          thumbnailUrl: item.snippet.thumbnails.medium.url,
-          channelTitle: item.snippet.channelTitle,
-          publishedAt: item.snippet.publishedAt
+          id: item.id?.videoId || '',
+          title: item.snippet?.title || '',
+          description: item.snippet?.description || '',
+          thumbnailUrl: item.snippet?.thumbnails?.medium?.url || '',
+          channelTitle: item.snippet?.channelTitle || '',
+          publishedAt: item.snippet?.publishedAt || ''
         }));
       } catch (error) {
         console.error('Error in YouTube search resolver:', error);
